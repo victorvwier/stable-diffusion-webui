@@ -40,7 +40,7 @@ def check_python_version():
     if is_windows:
         supported_minors = [10]
     else:
-        supported_minors = [7, 8, 9, 10, 11]
+        supported_minors = [7, 8, 9, 10, 11, 12]
 
     if not (major == 3 and minor in supported_minors):
         import modules.errors
@@ -141,7 +141,8 @@ def run_pip(command, desc=None, live=default_command_live):
         return
 
     index_url_line = f' --index-url {index_url}' if index_url != '' else ''
-    return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+    result = os.system(f"{python} -m pip {command} --prefer-binary {index_url_line}")
+    return result == 0
 
 
 def check_run_python(code: str) -> bool:
@@ -317,7 +318,7 @@ def requirements_met(requirements_file):
 
 def prepare_environment():
     torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu121")
-    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.1.2 torchvision==0.16.2 --extra-index-url {torch_index_url}")
+    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --extra-index-url {torch_index_url}")
     if args.use_ipex:
         if platform.system() == "Windows":
             # The "Nuullll/intel-extension-for-pytorch" wheels were built from IPEX source for Intel Arc GPU: https://github.com/intel/intel-extension-for-pytorch/tree/xpu-main
@@ -376,7 +377,6 @@ def prepare_environment():
     print(f"Python {sys.version}")
     print(f"Version: {tag}")
     print(f"Commit hash: {commit}")
-
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
         run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
         startup_timer.record("install torch")
@@ -407,7 +407,7 @@ def prepare_environment():
         startup_timer.record("install ngrok")
 
     os.makedirs(os.path.join(script_path, dir_repos), exist_ok=True)
-
+    print("Cloning all repos")
     git_clone(assets_repo, repo_dir('stable-diffusion-webui-assets'), "assets", assets_commit_hash)
     git_clone(stable_diffusion_repo, repo_dir('stable-diffusion-stability-ai'), "Stable Diffusion", stable_diffusion_commit_hash)
     git_clone(stable_diffusion_xl_repo, repo_dir('generative-models'), "Stable Diffusion XL", stable_diffusion_xl_commit_hash)
@@ -418,10 +418,16 @@ def prepare_environment():
 
     if not os.path.isfile(requirements_file):
         requirements_file = os.path.join(script_path, requirements_file)
-
+    print("Checking requirements")
     if not requirements_met(requirements_file):
-        run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        print("Requirements aren't met!")
+        result = run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        if not result:
+            print("Error installing requirements.txt")
+            exit(1)
         startup_timer.record("install requirements")
+    else:
+        print("Requirements met!")
 
     if not os.path.isfile(requirements_file_for_npu):
         requirements_file_for_npu = os.path.join(script_path, requirements_file_for_npu)
